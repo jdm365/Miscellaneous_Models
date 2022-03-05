@@ -75,7 +75,7 @@ class MultiHeadedAttention(nn.Module):
 
 class TransformerEncoder(nn.Module):
     def __init__(self, encoding_dims, n_heads, \
-        fc1_dims, fc2_dims, output_dims, first_block=False):
+        fc1_dims, fc2_dims, first_block=False):
         super(TransformerEncoder, self).__init__()
         self.multi_headed_attention = MultiHeadedAttention(
             encoding_dims,
@@ -95,7 +95,7 @@ class TransformerEncoder(nn.Module):
             nn.Linear(fc2_dims, encoding_dims)
         )
 
-        self.norm_2 = nn.LayerNorm(output_dims)
+        self.norm_2 = nn.LayerNorm(encoding_dims)
 
     def forward(self, inputs):
         mha_output, skip_val = self.multi_headed_attention.forward(inputs)
@@ -107,13 +107,13 @@ class TransformerEncoder(nn.Module):
 
 class TransformerNetwork(nn.Module):
     def __init__(self, lr, encoding_dims, n_heads, \
-        fc1_dims, fc2_dims, output_dims, n_encoder_blocks):
+        fc1_dims, fc2_dims, n_encoder_blocks):
         super(TransformerNetwork, self).__init__()
         self.encoder_blocks = nn.ModuleList(
             [TransformerEncoder(encoding_dims, n_heads, fc1_dims, \
-                fc2_dims, output_dims, first_block=True)] + \
+                fc2_dims, first_block=True)] + \
             [TransformerEncoder(encoding_dims, n_heads, fc1_dims, \
-                fc2_dims, output_dims) for _ in range(n_encoder_blocks-1)]
+                fc2_dims) for _ in range(n_encoder_blocks-1)]
         )
         self.network = nn.Sequential(
             *self.encoder_blocks,
