@@ -9,6 +9,12 @@ class PositionalEncoding(nn.Module):
     def __init__(self, encoding_dims=768, first_block=False):
         super(PositionalEncoding, self).__init__()
         self.first_block = first_block
+        input_dims = (7, 6)
+        input_dims = input_dims[-2] * input_dims[-1]
+        if first_block:
+            self.cls_token = nn.Parameter(T.zeros(1, 1, encoding_dims))
+            self.pos_embed = nn.Parameter(T.zeros(1, 1 + input_dims, \
+                encoding_dims))
 
         self.encodings = nn.Conv2d(
             in_channels=1,
@@ -18,12 +24,16 @@ class PositionalEncoding(nn.Module):
             )
 
     def forward(self, inputs):
-        if not self.first_blockfirst_block:
+        if not self.first_block:
             return inputs
         ## input_dims (N, in_channels, height, width)
         encodings = self.encodings(inputs)
         encoded_vectors = T.transpose(encodings.flatten(start_dim=2), 1, 2)
         ## encoded dims (N, input_dims[-2] * input_dims[-1], encoding_dims)
+        cls_token = self.cls_token.expand(inputs.shape[0], -1, -1)
+        encoded_vectors = T.cat((cls_token, encoded_vectors), dim=1)
+        encoded_vectors += self.pos_embed
+        ## encoded dims (N, 1 + (input_dims[-2] * input_dims[-1]), encoding_dims)
         return encoded_vectors
 
 class Attention(nn.Module):
@@ -39,15 +49,15 @@ class Attention(nn.Module):
     def forward(self, inputs):
         encoded_vectors = self.encoder.forward(inputs)
 
-        ## encoded dims (N, input_dims[-2] * input_dims[-1], encoding_dims)
+        ## encoded dims (N, 1 + (input_dims[-2] * input_dims[-1]), encoding_dims)
         queries = self.queries(encoded_vectors)
         keys = self.keys(encoded_vectors)
         values = self.values(encoded_vectors)
-        ## qkv dims (N, input_dims[-2] * input_dims[-1], encoding_dims)
+        ## qkv dims (N, 1 + (input_dims[-2] * input_dims[-1]), encoding_dims)
 
         out = T.einsum('tuv, tvw -> tuw', queries, keys.transpose(-2, -1)) / self.norm_factor
         out = F.softmax(out, dim=-1)
-        ## out dims (N, input_dims[-2] * input_dims[-1], input_dims[-2] * input_dims[-1])
+        ## out dims (N, 1+ (input_dims[-2] * input_dims[-1]), 1 + (input_dims[-2] * input_dims[-1]))
         attention_values = T.einsum('tuu, tuv -> tuv', out, values)
         ## att val dims == encoded dims
         return attention_values, encoded_vectors
@@ -67,7 +77,7 @@ class MultiHeadedAttention(nn.Module):
             value, skip_val = head.forward(inputs)
             attention_values.append(value.reshape(1, *value.shape))
         mha_output = T.stack(attention_values).mean(dim=0)
-        ## mha_out dims (N, input_dims[-2] * input_dims[-1], encoding_dims)
+        ## mha_out dims (N, 1+ (input_dims[-2] * input_dims[-1]), encoding_dims)
         skip_value = skip_val
         mha_output = self.fc(mha_output)
         return mha_output, skip_value
@@ -102,7 +112,7 @@ class TransformerEncoder(nn.Module):
         add_and_norm = self.norm_1(skip_val + mha_output)
         ff_output = self.feed_forward(add_and_norm)
         output = self.norm_2(add_and_norm + ff_output)
-        ## output dims (N, input_dims[-2]*input_dims[-1], encoding_dim)
+        ## output dims (N, 1 + (input_dims[-2] * input_dims[-1]), encoding_dim)
         return output
 
 class TransformerNetwork(nn.Module):
